@@ -11,6 +11,7 @@ import type { OperationInfo } from '../types/openapi.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { DAGExecutor } from './dag-executor.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
+import { ValidationError } from '../core/errors.js';
 
 export interface CompositeResult {
   data: Record<string, unknown>;
@@ -169,17 +170,26 @@ export class CompositeExecutor {
    */
   private resolvePath(template: string, args: Record<string, unknown>): string {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
+      let val: string | undefined;
+      const possibleAliases = this.parameterAliases[key] || [];
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodeURIComponent(String(args[key]));
+        val = String(args[key]);
+      } else {
+        // Try aliases from profile
+        for (const alias of possibleAliases) {
+          if (args[alias] !== undefined) {
+            val = String(args[alias]);
+            break;
+          }
+        }
       }
 
-      // Try aliases from profile
-      const possibleAliases = this.parameterAliases[key] || [];
-      for (const alias of possibleAliases) {
-        if (args[alias] !== undefined) {
-          return encodeURIComponent(String(args[alias]));
+      if (val !== undefined) {
+        if (val === '.' || val === '..') {
+          throw new ValidationError(`Invalid path parameter: exact match for '.' or '..' is not allowed`);
         }
+        return encodeURIComponent(val).replace(/\./g, '%2E');
       }
 
       throw new Error(

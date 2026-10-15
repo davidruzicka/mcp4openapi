@@ -1351,7 +1351,11 @@ export class MCPServer {
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+    if (val === '.' || val === '..') {
+      throw new ValidationError(`Invalid path parameter: exact match for '.' or '..' is not allowed`);
+    }
+    const encoded = val.includes('/') ? encodeURIComponent(val) : val;
+    return encoded.replace(/\./g, '%2E');
   }
 
   /**
