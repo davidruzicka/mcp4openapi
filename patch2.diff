@@ -1,0 +1,12 @@
+<<<<<<< SEARCH
+// Mock SSRFValidator to bypass validation for existing tests
+// Must be hoisted before imports
+vi.mock('../security/ssrf-validator.js', () => {
+  return {
+    SSRFValidator: class {
+      async validate() { return; }
+    }
+  };
+});
+=======
+>>>>>>> REPLACE

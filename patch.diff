@@ -1,0 +1,85 @@
+<<<<<<< SEARCH
+import { decodeProtectedHeader, jwtVerify, errors as joseErrors } from 'jose';
+import type { Logger } from '../core/logger.js';
+import type { EnterpriseAuthorizationConfig } from '../types/profile.js';
+=======
+import { decodeProtectedHeader, jwtVerify, errors as joseErrors } from 'jose';
+import type { Logger } from '../core/logger.js';
+import type { EnterpriseAuthorizationConfig } from '../types/profile.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+export interface EnterpriseAuthProviderOptions {
+  profileId: string;
+  config: EnterpriseAuthorizationConfig;
+  jwksCache: JwksCache;
+  replayStore: EnterpriseReplayStore;
+  logger: Logger;
+}
+
+export class EnterpriseAuthProvider {
+  private readonly profileId: string;
+  private readonly config: EnterpriseAuthorizationConfig;
+  private readonly jwksCache: JwksCache;
+  private readonly replayStore: EnterpriseReplayStore;
+  private readonly logger: Logger;
+
+  constructor(options: EnterpriseAuthProviderOptions) {
+    this.profileId = options.profileId;
+    this.config = options.config;
+    this.jwksCache = options.jwksCache;
+    this.replayStore = options.replayStore;
+    this.logger = options.logger;
+  }
+=======
+export interface EnterpriseAuthProviderOptions {
+  profileId: string;
+  config: EnterpriseAuthorizationConfig;
+  jwksCache: JwksCache;
+  replayStore: EnterpriseReplayStore;
+  logger: Logger;
+  ssrfValidator?: SSRFValidator;
+}
+
+export class EnterpriseAuthProvider {
+  private readonly profileId: string;
+  private readonly config: EnterpriseAuthorizationConfig;
+  private readonly jwksCache: JwksCache;
+  private readonly replayStore: EnterpriseReplayStore;
+  private readonly logger: Logger;
+  private readonly ssrfValidator: SSRFValidator;
+
+  constructor(options: EnterpriseAuthProviderOptions) {
+    this.profileId = options.profileId;
+    this.config = options.config;
+    this.jwksCache = options.jwksCache;
+    this.replayStore = options.replayStore;
+    this.logger = options.logger;
+    this.ssrfValidator = options.ssrfValidator ?? new SSRFValidator(this.logger);
+  }
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  private async resolveJwksUri(): Promise<string> {
+    if (this.config.issuer.trust_mode !== 'discovery') {
+      return this.config.issuer.jwks_uri ?? new URL('/.well-known/jwks.json', this.config.issuer.issuer).toString();
+    }
+
+    const discoveryUrl = new URL('/.well-known/openid-configuration', this.config.issuer.issuer).toString();
+    const response = await fetch(discoveryUrl, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+=======
+  private async resolveJwksUri(): Promise<string> {
+    if (this.config.issuer.trust_mode !== 'discovery') {
+      return this.config.issuer.jwks_uri ?? new URL('/.well-known/jwks.json', this.config.issuer.issuer).toString();
+    }
+
+    const discoveryUrl = new URL('/.well-known/openid-configuration', this.config.issuer.issuer).toString();
+    await this.ssrfValidator.validate(discoveryUrl);
+
+    const response = await fetch(discoveryUrl, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+>>>>>>> REPLACE
