@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+
+vi.mock('../security/ssrf-validator.js', () => {
+  return {
+    SSRFValidator: class SSRFValidator {
+      validate = vi.fn().mockResolvedValue(undefined);
+    }
+  };
+});
+
 import { EnterpriseAuthProvider } from './enterprise-auth-provider.js';
 import { EnterpriseReplayStore } from './enterprise-replay-store.js';
 import { JwksCache } from './jwks-cache.js';

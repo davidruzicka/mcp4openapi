@@ -1,0 +1,15 @@
+<<<<<<< SEARCH
+    const discoveryUrl = new URL('/.well-known/openid-configuration', this.config.issuer.issuer).toString();
+
+    await this.ssrfValidator.validate(discoveryUrl);
+
+    const response = await fetch(discoveryUrl, {
+=======
+    const discoveryUrl = new URL('/.well-known/openid-configuration', this.config.issuer.issuer).toString();
+
+    await this.ssrfValidator.validate(discoveryUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+    });
+
+    const response = await fetch(discoveryUrl, {
+>>>>>>> REPLACE
