@@ -1351,6 +1351,9 @@ export class MCPServer {
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
+    if (val === '.' || val === '..') {
+      throw new ValidationError('Path traversal detected');
+    }
     return val.includes('/') ? encodeURIComponent(val) : val;
   }
 

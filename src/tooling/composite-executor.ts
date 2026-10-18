@@ -11,6 +11,7 @@ import type { OperationInfo } from '../types/openapi.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { DAGExecutor } from './dag-executor.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
+import { ValidationError } from '../core/errors.js';
 
 export interface CompositeResult {
   data: Record<string, unknown>;
@@ -169,19 +170,30 @@ export class CompositeExecutor {
    */
   private resolvePath(template: string, args: Record<string, unknown>): string {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
+      let val: string | undefined;
+
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodeURIComponent(String(args[key]));
-      }
-
-      // Try aliases from profile
-      const possibleAliases = this.parameterAliases[key] || [];
-      for (const alias of possibleAliases) {
-        if (args[alias] !== undefined) {
-          return encodeURIComponent(String(args[alias]));
+        val = String(args[key]);
+      } else {
+        // Try aliases from profile
+        const possibleAliases = this.parameterAliases[key] || [];
+        for (const alias of possibleAliases) {
+          if (args[alias] !== undefined) {
+            val = String(args[alias]);
+            break;
+          }
         }
       }
 
+      if (val !== undefined) {
+        if (val === '.' || val === '..') {
+          throw new ValidationError('Path traversal detected');
+        }
+        return encodeURIComponent(val);
+      }
+
+      const possibleAliases = this.parameterAliases[key] || [];
       throw new Error(
         `Missing path parameter: ${key}` +
         (possibleAliases.length > 0 ? `. Tried aliases: ${possibleAliases.join(', ')}` : '')
