@@ -397,6 +397,8 @@ export class HttpTransport {
       res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
 
       // Additional security headers
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      res.setHeader('X-XSS-Protection', '0');
       res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
       res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
       res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
