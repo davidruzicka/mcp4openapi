@@ -63,7 +63,7 @@ export function resolveClientAuthGateConfig(config: ClientAuthGateConfig): Clien
     resolveEnv(config.mode, config.mode_from_env, 'client_auth_gate.mode') ?? 'required';
   if (resolvedMode !== 'required' && resolvedMode !== 'optional') {
     throw new ClientAuthGateError(
-      `client_auth_gate.mode must be 'required' or 'optional', got '${resolvedMode}'`,
+      `client_auth_gate.mode must be 'required' or 'optional'`,
       { path: 'client_auth_gate.mode', value: resolvedMode },
     );
   }
