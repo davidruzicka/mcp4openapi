@@ -47,7 +47,7 @@ export class ClientAuthGate {
     const mode = config.mode ?? 'required';
     if (mode !== 'required' && mode !== 'optional') {
       throw new ClientAuthGateError(
-        `client_auth_gate.mode must be 'required' or 'optional', got '${mode}'`,
+        `client_auth_gate.mode must be 'required' or 'optional'`,
       );
     }
     this.resolvedMode = mode;
