@@ -105,6 +105,8 @@ export class RefreshRotationStore {
   private readonly families = new Map<string, FamilyEntry>();
   /** Revoked-family markers (key -> expiresAt). Never evicted by the family LRU cap. */
   private readonly revoked = new Map<string, number>();
+  private evictCounter = 0;
+  private readonly EVICT_INTERVAL = 100;
 
   constructor(options: RefreshRotationStoreOptions = {}) {
     this.maxFamilies = options.maxFamilies ?? DEFAULT_REFRESH_ROTATION_MAX_FAMILIES;
@@ -127,7 +129,11 @@ export class RefreshRotationStore {
    */
   beginRotation<T>(key: string, jti: string): RefreshRedemption<T> {
     const now = Date.now();
-    this.evictExpired(now);
+
+    if (++this.evictCounter >= this.EVICT_INTERVAL) {
+      this.evictExpired(now);
+      this.evictCounter = 0;
+    }
 
     if (this.isRevoked(key, now)) {
       throw new OAuthInvalidGrantError('Refresh token rotation chain was revoked');

@@ -3330,5 +3330,23 @@ describe('completeAuthorization (deferred consent completion, AIPP-625)', () => 
     );
     expect(res.redirected).toContain('code=');
     expect(res.redirected).not.toContain('state=');
+
+  });
+});
+
+describe('consumedCodeTombstones hard bounds', () => {
+  it('enforces a maximum size limit for consumed code tombstones via FIFO eviction', async () => {
+    const provider = new ExternalOAuthProvider(
+      {
+        issuer: 'https://example.com',
+        client_id: 'client',
+      },
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    );
+    for (let i = 0; i < 10005; i++) {
+      (provider as any).recordConsumedCodeTombstone(`code-${i}`, { access_token: `access-${i}` }, 'client-id');
+    }
+    expect((provider as any).consumedCodeTombstones.size).toBe(10000);
+    expect((provider as any).consumedCodeTombstones.has('code-0')).toBe(false);
   });
 });
