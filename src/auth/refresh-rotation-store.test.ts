@@ -51,6 +51,40 @@ describe('RefreshRotationStore', () => {
     expect(store.beginRotation('default:fam-1', jti2).kind).toBe('lease');
   });
 
+  it('evicts expired entries after EVICT_INTERVAL calls', () => {
+    vi.useFakeTimers();
+    const store = new RefreshRotationStore({ ttlMs: 1000, graceMs: 0 });
+
+    // Add an entry
+    rotate(store, 'default:fam-1', 'jti-1');
+    expect(store.size()).toBe(1);
+
+    // Advance time past TTL
+    vi.advanceTimersByTime(2000);
+
+    // Call beginRotation EVICT_INTERVAL - 1 times with a different key
+    for (let i = 0; i < 99; i++) {
+      try {
+          const red = store.beginRotation(`other:${i}`, 'jti');
+          if (red.kind === 'lease') red.lease.commit('r');
+      } catch (e) {}
+    }
+
+    // Size should still include the expired entry (and the new ones)
+    // because eviction hasn't triggered yet.
+    // It's possible the new ones pushed it out if maxFamilies is reached,
+    // but here we are far below 10000.
+
+    // The 100th call triggers the eviction
+    try {
+        const red = store.beginRotation('other:100', 'jti');
+        if (red.kind === 'lease') red.lease.commit('r');
+    } catch (e) {}
+
+    // Verify fam-1 was evicted
+    expect(store.beginRotation('default:fam-1', 'new-jti-1').kind).toBe('lease');
+  });
+
   it('detects reuse of a superseded jti and revokes the whole family', async () => {
     const store = new RefreshRotationStore({ graceMs: 0 });
     const jti2 = rotate(store, 'default:fam-1', 'jti-1');

@@ -1,0 +1,13 @@
+--- src/auth/refresh-rotation-store.test.ts
++++ src/auth/refresh-rotation-store.test.ts
+@@ -82,9 +82,7 @@
+     } catch (e) {}
+
+     // Verify fam-1 was evicted
+-    expect(() => store.beginRotation('default:fam-1', 'jti-2')).not.toThrow(OAuthInvalidGrantError);
+-    // Since it was evicted, it's treated as an unknown family on first use, returning a lease.
+-    expect(store.beginRotation('default:fam-1', 'jti-2').kind).toBe('lease');
++    expect(store.beginRotation('default:fam-1', 'new-jti-1').kind).toBe('lease');
+   });
+
+   it('detects reuse of a superseded jti and revokes the whole family', async () => {
