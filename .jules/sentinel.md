@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-10-23 - [MEDIUM] Unbounded Growth of OAuth In-Memory Stores
+
+**Vulnerability:**
+The `ExternalOAuthProvider` maintained a `consumedCodeTombstones` map which relied only on time-based expiry and had no hard size limit, and `RefreshRotationStore` ran a full O(n) sweep (`evictExpired`) on every redemption, opening up opportunities for memory exhaustion DoS when subjected to a flood of requests.
+
+**Learning:**
+In-memory structures holding state for unauthenticated or externally-driven flows (like OAuth tombstones and rotation leases) must define a strict upper bound to contain memory usage regardless of TTL configurations. In addition, performing expensive operations (like full cache iteration to reap expired entries) synchronously on every request degrades performance and can be exploited.
+
+**Prevention:**
+1. Defined a hard limit of `10000` (similar to sibling state maps) and implemented a FIFO eviction check for `consumedCodeTombstones`.
+2. Added an amortization counter in `RefreshRotationStore` to run full sweeps (like `evictExpired`) less frequently (e.g., once every 100 requests), thereby mitigating O(n) sweeps per-request without accumulating unbounded expired items.

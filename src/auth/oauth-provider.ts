@@ -125,6 +125,7 @@ const PKCE_CODE_VERIFIER_PATTERN = /^[A-Za-z0-9\-._~]{43,128}$/;
  * expired anyway.
  */
 const CONSUMED_CODE_TOMBSTONE_TTL_MS = 5 * 60 * 1000;
+const CONSUMED_CODE_TOMBSTONE_MAX = 10000;
 
 /** Loopback hosts that may use plain http redirect_uris (RFC 8252). */
 const LOOPBACK_REDIRECT_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
@@ -1357,6 +1358,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       clientId,
       expiresAt: Date.now() + CONSUMED_CODE_TOMBSTONE_TTL_MS,
     });
+
+    while (this.consumedCodeTombstones.size > CONSUMED_CODE_TOMBSTONE_MAX) {
+      const oldestKey = this.consumedCodeTombstones.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.consumedCodeTombstones.delete(oldestKey);
+    }
   }
 
   /**
