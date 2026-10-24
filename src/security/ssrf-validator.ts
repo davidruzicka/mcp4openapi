@@ -106,12 +106,15 @@ export class SSRFValidator {
 
     let results: Array<{ address: string }> = [];
     try {
+      let timeoutId: NodeJS.Timeout;
       results = (await Promise.race([
         lookup(hostname, { all: true, verbatim: true }) as Promise<Array<{ address: string }>>,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`DNS lookup timeout after ${timeoutMs}ms`)), timeoutMs)
-        ),
-      ])) as Array<{ address: string }>;
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(`DNS lookup timeout after ${timeoutMs}ms`)), timeoutMs);
+        }),
+      ]).finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
+      })) as Array<{ address: string }>;
     } catch (error) {
       this.logger.warn('SSRF blocked: DNS lookup failed', {
         hostname,
