@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-10-24 - [MEDIUM] Memory Leak / DoS via Uncleared Timeouts
+
+**Vulnerability:**
+`setTimeout` used within `Promise.race` constructs (e.g., in `ssrf-validator.ts` and `mcp-server.ts`) for timeouts were not explicitly cleared when the primary promise resolved successfully before the timeout. This could lead to memory leaks and resource exhaustion over time as the Node.js event loop keeps these pending timers alive, potentially leading to a Denial of Service (DoS) vulnerability under high load.
+
+**Learning:**
+Even if a promise resolves early and a timeout is no longer needed (and the late rejection is ignored by `Promise.race`), the underlying Node.js `Timeout` object remains active until it fires. When using `Promise.race` for timeouts, it is critical to explicitly clear the timeout using `clearTimeout()` in a `.finally()` block to immediately free the resources.
+
+**Prevention:**
+1.  Always use `clearTimeout()` for any `setTimeout` created for a `Promise.race` timeout once the race concludes.
+2.  Store the `NodeJS.Timeout` reference and clear it in a `.finally()` clause attached to the `Promise.race` call.
