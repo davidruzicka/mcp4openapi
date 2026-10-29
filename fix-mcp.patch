@@ -1,0 +1,11 @@
+--- src/mcp/mcp-server.ts
++++ src/mcp/mcp-server.ts
+@@ -1349,6 +1349,9 @@
+    */
+   private encodePathSegment(value: unknown): string {
+     const val = String(value);
++    if (val === '.' || val === '..') {
++      throw new ValidationError(`Path traversal detected for parameter`);
++    }
+     return val.includes('/') ? encodeURIComponent(val) : val;
+   }
