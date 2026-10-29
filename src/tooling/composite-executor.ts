@@ -11,6 +11,7 @@ import type { OperationInfo } from '../types/openapi.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { DAGExecutor } from './dag-executor.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
+import { ValidationError } from '../core/errors.js';
 
 export interface CompositeResult {
   data: Record<string, unknown>;
@@ -171,14 +172,22 @@ export class CompositeExecutor {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodeURIComponent(String(args[key]));
+        const val = String(args[key]);
+        if (val === '.' || val === '..') {
+          throw new ValidationError(`Path traversal detected for parameter ${key}`);
+        }
+        return encodeURIComponent(val);
       }
 
       // Try aliases from profile
       const possibleAliases = this.parameterAliases[key] || [];
       for (const alias of possibleAliases) {
         if (args[alias] !== undefined) {
-          return encodeURIComponent(String(args[alias]));
+          const val = String(args[alias]);
+          if (val === '.' || val === '..') {
+            throw new ValidationError(`Path traversal detected for parameter ${alias}`);
+          }
+          return encodeURIComponent(val);
         }
       }
 

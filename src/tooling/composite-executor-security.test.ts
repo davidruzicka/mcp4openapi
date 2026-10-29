@@ -49,26 +49,23 @@ describe('CompositeExecutor Security', () => {
   });
 
   it('vulnerability: path traversal via parameter injection', async () => {
-    // This test demonstrates the vulnerability.
-    // If the parameter is not encoded, ".." segments are injected into the path.
-    // NOTE: This test is expected to PASS (demonstrating the bug) before the fix,
-    // and FAIL (demonstrating the fix) after the fix.
-
     const steps: CompositeStep[] = [
       { call: 'GET /users/{id}/profile', store_as: 'result' },
     ];
 
-    // Malicious input trying to traverse up
+    // Normal traversal should be encoded by encodeURIComponent
     const maliciousId = '../admin/secrets';
-
     await executor.execute(steps, { id: maliciousId });
-
-    // Vulnerable behavior: path contains raw ".."
-    // Fixed behavior: path contains encoded "%2E%2E"
-    // Note: encodeURIComponent('../admin/secrets') => ..%2Fadmin%2Fsecrets
-    // The slashes inside the injected value are encoded, preventing directory traversal
     const expectedFixedPath = '/users/..%2Fadmin%2Fsecrets/profile';
-
     expect(capturedPaths[0]).toBe(expectedFixedPath);
+
+    // Strict match of '..' or '.' should throw
+    await expect(executor.execute(steps, { id: '..' })).rejects.toThrow();
+    await expect(executor.execute(steps, { id: '.' })).rejects.toThrow();
+
+    // With aliases
+    const executorWithAliases = new CompositeExecutor(parser, httpClient, { id: ['userId'] });
+    await expect(executorWithAliases.execute(steps, { userId: '..' })).rejects.toThrow();
+    await expect(executorWithAliases.execute(steps, { userId: '.' })).rejects.toThrow();
   });
 });
