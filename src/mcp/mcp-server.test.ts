@@ -64,16 +64,6 @@ describe('MCPServer', () => {
       expect(encodePathSegment('some/path')).toBe('some%2Fpath');
     });
   });
-  describe('Path traversal protection', () => {
-    it('throws ValidationError when path segment is exactly . or ..', () => {
-      const server = new MCPServer({} as any, {} as any, {} as any);
-      const encodePathSegment = (server as any).encodePathSegment.bind(server);
-      expect(() => encodePathSegment('.')).toThrowError('Path traversal detected for parameter');
-      expect(() => encodePathSegment('..')).toThrowError('Path traversal detected for parameter');
-      expect(encodePathSegment('valid')).toBe('valid');
-      expect(encodePathSegment('some/path')).toBe('some%2Fpath');
-    });
-  });
   let server: MCPServer;
   const originalApiToken = process.env.MCP4_API_TOKEN;
 

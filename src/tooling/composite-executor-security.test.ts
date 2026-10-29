@@ -62,5 +62,10 @@ describe('CompositeExecutor Security', () => {
     // Strict match of '..' or '.' should throw
     await expect(executor.execute(steps, { id: '..' })).rejects.toThrow();
     await expect(executor.execute(steps, { id: '.' })).rejects.toThrow();
+
+    // With aliases
+    const executorWithAliases = new CompositeExecutor(parser, httpClient, { id: ['userId'] });
+    await expect(executorWithAliases.execute(steps, { userId: '..' })).rejects.toThrow();
+    await expect(executorWithAliases.execute(steps, { userId: '.' })).rejects.toThrow();
   });
 });
