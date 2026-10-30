@@ -11,6 +11,7 @@ import type { OperationInfo } from '../types/openapi.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { DAGExecutor } from './dag-executor.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
+import { ValidationError } from '../core/errors.js';
 
 export interface CompositeResult {
   data: Record<string, unknown>;
@@ -169,23 +170,36 @@ export class CompositeExecutor {
    */
   private resolvePath(template: string, args: Record<string, unknown>): string {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
+      let valueToEncode: unknown;
+
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodeURIComponent(String(args[key]));
-      }
-
-      // Try aliases from profile
-      const possibleAliases = this.parameterAliases[key] || [];
-      for (const alias of possibleAliases) {
-        if (args[alias] !== undefined) {
-          return encodeURIComponent(String(args[alias]));
+        valueToEncode = args[key];
+      } else {
+        // Try aliases from profile
+        const possibleAliases = this.parameterAliases[key] || [];
+        for (const alias of possibleAliases) {
+          if (args[alias] !== undefined) {
+            valueToEncode = args[alias];
+            break;
+          }
         }
       }
 
-      throw new Error(
-        `Missing path parameter: ${key}` +
-        (possibleAliases.length > 0 ? `. Tried aliases: ${possibleAliases.join(', ')}` : '')
-      );
+      if (valueToEncode === undefined) {
+        const possibleAliases = this.parameterAliases[key] || [];
+        throw new Error(
+          `Missing path parameter: ${key}` +
+          (possibleAliases.length > 0 ? `. Tried aliases: ${possibleAliases.join(', ')}` : '')
+        );
+      }
+
+      const strValue = String(valueToEncode);
+      if (strValue === '.' || strValue === '..') {
+        throw new ValidationError(`Path parameter cannot be exactly '.' or '..'`);
+      }
+
+      return encodeURIComponent(strValue);
     });
   }
 

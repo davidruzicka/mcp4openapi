@@ -605,6 +605,32 @@ paths:
   });
 
   describe('error sanitization', () => {
+
+    it('should throw ValidationError when path parameter is exactly . or .. to prevent path traversal', async () => {
+      const server = new MCPServer();
+
+      const mockOp = {
+        operationId: 'test_path_traversal',
+        method: 'GET',
+        path: '/users/{id}',
+        parameters: [{ in: 'path', name: 'id', required: true }]
+      };
+
+      server['parser'] = {
+        getOperation: () => mockOp,
+      } as any;
+      server['profile'] = { tools: [], parameter_aliases: {} } as any;
+
+      expect(() => server['resolvePath'](mockOp.path, { id: '..' }))
+        .toThrowError(ValidationError);
+
+      expect(() => server['resolvePath'](mockOp.path, { id: '.' }))
+        .toThrowError(ValidationError);
+
+      expect(() => server['resolvePath'](mockOp.path, { id: '../admin' }))
+        .not.toThrowError(ValidationError);
+    });
+
     it('should successfully execute simple tool and return result', async () => {
       const server = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
