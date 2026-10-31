@@ -63,8 +63,8 @@ export function resolveClientAuthGateConfig(config: ClientAuthGateConfig): Clien
     resolveEnv(config.mode, config.mode_from_env, 'client_auth_gate.mode') ?? 'required';
   if (resolvedMode !== 'required' && resolvedMode !== 'optional') {
     throw new ClientAuthGateError(
-      `client_auth_gate.mode must be 'required' or 'optional', got '${resolvedMode}'`,
-      { path: 'client_auth_gate.mode', value: resolvedMode },
+      `client_auth_gate.mode must be 'required' or 'optional'`,
+      { path: 'client_auth_gate.mode' },
     );
   }
   const mode: 'required' | 'optional' = resolvedMode;
@@ -77,7 +77,7 @@ export function resolveClientAuthGateConfig(config: ClientAuthGateConfig): Clien
     if (apiKeys.type !== 'inline') {
       throw new ClientAuthGateError(
         `client_auth_gate.api_keys.type '${apiKeys.type}' is not supported. Allowed: inline`,
-        { path: 'client_auth_gate.api_keys.type', value: apiKeys.type },
+        { path: 'client_auth_gate.api_keys.type' },
       );
     }
     // Phase 4 adds: if (apiKeys.type === 'sasanka') { ... }
