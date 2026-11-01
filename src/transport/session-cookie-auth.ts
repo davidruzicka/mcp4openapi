@@ -6,8 +6,9 @@ import {
   SessionCookieMissingError,
 } from '../core/errors.js';
 import { TIMEOUTS } from '../core/constants.js';
-import type { Logger } from '../core/logger.js';
+import { type Logger, ConsoleLogger } from '../core/logger.js';
 import type { SessionCookieConfig } from '../types/profile.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 import { isHostnameAllowed, isSafePropertyName } from '../validation/validation-utils.js';
 import type { AuthRuntimeProvider } from './auth-runtime.js';
 import type { AuthCredentials, RequestContext, ResponseContext } from './interceptors.js';
@@ -233,14 +234,17 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
   private readonly cookieJar = new SessionCookieJar(new Set(this.config.cookie_names));
   private readonly reauthOnStatuses = new Set(this.config.reauth_on_statuses || [401]);
   private readonly coordinator: SessionCookieCoordinator;
+  private readonly ssrfValidator: SSRFValidator;
 
   constructor(
     private readonly config: SessionCookieConfig,
     private readonly baseUrlValue: string,
     private readonly logger?: Logger,
     private readonly requestTimeoutMs: number = TIMEOUTS.HTTP_REQUEST_TIMEOUT_MS,
+    ssrfValidator?: SSRFValidator,
   ) {
     this.coordinator = new SessionCookieCoordinator(this.config.failure_backoff_ms ?? 5000);
+    this.ssrfValidator = ssrfValidator ?? new SSRFValidator(this.logger ?? new ConsoleLogger());
   }
 
   async prepareRequest(_ctx: RequestContext): Promise<AuthCredentials> {
@@ -289,6 +293,10 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
       let response: Response;
 
       try {
+        await this.ssrfValidator.validate(loginUrl, {
+          allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+        });
+
         response = await fetch(loginUrl, {
           method: this.config.login_method || 'POST',
           headers: request.headers,

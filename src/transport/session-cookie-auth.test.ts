@@ -14,11 +14,11 @@ import {
   SessionCookieBackoffError,
   SessionCookieMissingError,
 } from '../core/errors.js';
-import type { SSRFValidator } from '../security/ssrf-validator.js';
-
-const mockSSRFValidator = {
-  validate: async () => {},
-} as unknown as SSRFValidator;
+vi.mock('../security/ssrf-validator.js', () => ({
+  SSRFValidator: class {
+    validate = vi.fn().mockResolvedValue(undefined);
+  }
+}));
 
 const originalEnv = { ...process.env };
 
@@ -411,7 +411,7 @@ describe('session-cookie auth runtime', () => {
       new InterceptorChain(config, manager),
       null,
       undefined,
-      mockSSRFValidator,
+      undefined,
     );
 
     const callUrls: string[] = [];
