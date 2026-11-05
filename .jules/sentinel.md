@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+## 2026-03-24 - [HIGH] SSRF in SessionCookieAuthManager
+
+**Vulnerability:**
+The `SessionCookieAuthManager` used `fetch()` directly on user-configurable URLs defined in `login_endpoint`. While `login_allowed_hosts` restricts valid origins for cross-domain usage, it allowed an attacker to whitelist a domain that resolved to an internal IP (e.g. `127.0.0.1` or `169.254.169.254`), enabling SSRF via HTTP POST requests for internal exploitation.
+
+**Learning:**
+Validating hostname strings against an allowlist does not protect against DNS rebinding or direct resolution to private network space. Server-Side Request Forgery vulnerabilities apply to any outbound request using configurations out of the operator's direct control.
+
+**Prevention:**
+1.  Wrap all outbound HTTP calls with the existing `SSRFValidator`.
+2.  Provide escape hatches for local testing / expected internal network access using `MCP4_SSRF_ALLOW_PRIVATE_NETWORK`.
+3.  Include specific SSRF checks in security regression testing (`src/transport/session-cookie-auth-ssrf.test.ts`).
