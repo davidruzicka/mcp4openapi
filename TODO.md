@@ -426,23 +426,6 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 
 **Estimated effort**: 1-2 hours
 
-### 18. Remove legacy SHA-256 token envelope KDF fallback
-
-**Background**: The passphrase path of `deriveTokenKey()` was migrated from unsalted SHA-256 to scrypt (CWE-916, CodeQL js/insufficient-password-hash). To avoid breaking existing production sessions, `decryptTokenPayload()` accepts a `fallbackKey` derived via `deriveLegacySha256TokenKey()` (wired as `legacyTokenKey` from `MCP4_OAUTH_KEY` passphrases) so pre-migration `mcp4.v1.*` envelopes still decrypt. New envelopes are always scrypt-derived, so legacy envelopes age out naturally on token refresh/expiry (max envelope age 30 days).
-
-**Goal**: Remove the SHA-256 fallback once all pre-migration envelopes have expired.
-
-**When safe to remove**: at least 30 days (MAX_ENVELOPE_AGE_MS) after the scrypt migration ships in a release - any remaining legacy envelope is stale and rejected anyway.
-
-**Files to modify**:
-- `src/auth/token-envelope.ts` - remove `deriveLegacySha256TokenKey()` and the `fallbackKey` parameter from `decryptTokenPayload()`
-- `src/transport/http-transport-config.ts` - remove `legacyTokenKey` derivation
-- `src/types/http-transport.ts` - remove `legacyTokenKey` field
-- `src/transport/http-transport.ts` - drop `legacyTokenKey` argument at both `decryptTokenPayload` call sites
-- Tests: `src/auth/token-envelope.test.ts`, `src/transport/http-transport-config.test.ts`
-
-**Estimated effort**: 30 minutes
-
 ### 21. Revoke the refresh rotation family on authorization-code replay
 
 **Background** (AIPP-572 recheck): `revokeTokensForConsumedCode()` (`src/auth/oauth-provider.ts`) deletes the access token and the `refreshTokenIdentities` entry issued from a replayed authorization code, but does not revoke the client-facing refresh rotation family minted from that redemption. The rotating `mcp4.r1.*` envelope chain therefore survives a detected code replay, so the "replay revokes the tokens from the first redemption" guarantee is only partial. Severity is low: mandatory PKCE means a code replay also requires the code_verifier.

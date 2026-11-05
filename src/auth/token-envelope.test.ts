@@ -5,7 +5,6 @@ import {
   assertRefreshEnvelopeClientBinding,
   decryptRefreshEnvelope,
   decryptTokenPayload,
-  deriveLegacySha256TokenKey,
   deriveTokenKey,
   encryptRefreshEnvelope,
   encryptTokenPayload,
@@ -84,35 +83,6 @@ describe('token-envelope', () => {
     expect(isEncryptedToken('mcp4.v2.abc')).toBe(false);
     expect(isEncryptedToken('plain-token')).toBe(false);
     expect(isEncryptedToken('')).toBe(false);
-  });
-
-  it('decrypts a legacy SHA-256 envelope via fallbackKey (backward compatibility)', () => {
-    const legacyKey = deriveLegacySha256TokenKey('test-passphrase');
-    const legacyToken = encryptTokenPayload(FULL_PAYLOAD, legacyKey);
-    // Primary scrypt key alone cannot open the legacy envelope
-    expect(decryptTokenPayload(legacyToken, KEY, PROFILE_ID)).toBeNull();
-    // With the legacy fallback key it decrypts
-    const out = decryptTokenPayload(legacyToken, KEY, PROFILE_ID, legacyKey);
-    expect(out).not.toBeNull();
-    expect(out).toEqual(FULL_PAYLOAD);
-  });
-
-  it('does not use fallbackKey when the primary key already succeeds', () => {
-    const token = encryptTokenPayload(FULL_PAYLOAD, KEY);
-    const wrongFallback = deriveLegacySha256TokenKey('unrelated');
-    const out = decryptTokenPayload(token, KEY, PROFILE_ID, wrongFallback);
-    expect(out).toEqual(FULL_PAYLOAD);
-  });
-
-  it('returns null when both primary and fallback keys fail', () => {
-    const legacyToken = encryptTokenPayload(FULL_PAYLOAD, deriveLegacySha256TokenKey('other'));
-    expect(decryptTokenPayload(legacyToken, KEY, PROFILE_ID, OTHER_KEY)).toBeNull();
-  });
-
-  it('deriveLegacySha256TokenKey matches SHA-256(raw)', () => {
-    const key = deriveLegacySha256TokenKey('test-passphrase');
-    expect(key.length).toBe(32);
-    expect(key.equals(createHash('sha256').update('test-passphrase').digest())).toBe(true);
   });
 
   it('round-trips a full payload preserving every field', () => {
@@ -482,18 +452,6 @@ describe('refresh envelope decoder guards', () => {
     const tag = cipher.getAuthTag();
     return 'mcp4.r1.' + Buffer.concat([nonce, ct, tag]).toString('base64url');
   };
-
-  it('retries with the legacy fallback key', () => {
-    // Passphrase deployments predating the scrypt KDF must keep working.
-    const legacyKey = deriveLegacySha256TokenKey('test-passphrase');
-    const envelope = craftRefresh(REFRESH_PAYLOAD, legacyKey);
-
-    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
-    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID, legacyKey)).toMatchObject({
-      rt: 'idp-refresh',
-      sub: 'person-1',
-    });
-  });
 
   it('returns null for a key of the wrong length', () => {
     const envelope = encryptRefreshEnvelope(REFRESH_PAYLOAD, KEY);
