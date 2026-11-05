@@ -4034,7 +4034,6 @@ export class HttpTransport {
                 authInfo.token,
                 this.config.tokenKey,
                 profileState.profileId,
-                this.config.legacyTokenKey,
               );
               if (envelope) {
                 // Issue #3: reject stale envelopes to bound token lifetime at rest.
@@ -4813,7 +4812,6 @@ export class HttpTransport {
         token,
         this.config.tokenKey,
         profileState.profileId,
-        this.config.legacyTokenKey,
       );
       if (envelope) {
         tokenToValidate = envelope.at;
@@ -5291,7 +5289,6 @@ export class HttpTransport {
       profileId: profileState.profileId,
       consentRequired: profileState.context.consent_gate?.required === true,
       tokenKey: this.config.tokenKey,
-      legacyTokenKey: this.config.legacyTokenKey,
       rotationStore: this.refreshRotationStore,
       recordRotation: (event) =>
         this.metrics?.recordRefreshRotation(event, { profileId: profileState.profileId }),
