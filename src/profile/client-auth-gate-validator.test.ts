@@ -105,7 +105,7 @@ describe('validateClientAuthGateProfile', () => {
     });
 
     expect(() => validateClientAuthGateProfile(profile)).toThrow(ClientAuthGateError);
-    expect(() => validateClientAuthGateProfile(profile)).toThrow(/NOT_SET_ENV_VAR/);
+    expect(() => validateClientAuthGateProfile(profile)).toThrow(/required env var is not set/);
   });
 
   it("rejects mode with invalid value resolved from env", () => {
@@ -215,7 +215,7 @@ describe('validateClientAuthGateProfile', () => {
     });
 
     expect(() => validateClientAuthGateProfile(profile)).toThrow(ClientAuthGateError);
-    expect(() => validateClientAuthGateProfile(profile)).toThrow(/NOT_SET_ENV_VAR.*not set/);
+    expect(() => validateClientAuthGateProfile(profile)).toThrow(/required env var is not set/);
   });
 
   it('rejects when mode=required and api_keys is missing (jwt added in Phase 4)', () => {

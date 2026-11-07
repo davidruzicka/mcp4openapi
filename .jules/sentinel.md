@@ -126,3 +126,14 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+## 2026-11-07 - [MEDIUM] Environment Variable Leakage in Error Messages (Extended)
+
+**Vulnerability:**
+Multiple configuration parsers and validators (`EnvConfigParser`, `readArtifactTrustConfig`, `MCPServer`, `ClientAuthGateValidator`, `ClientAuthGate`, and `Filtering`) included raw environment variable values, header values, or parsed configuration values in error messages (e.g., `ConfigurationError`, `ClientAuthGateError`, `AuthorizationError`). If a sensitive configuration value (like an API key or a secret path) failed validation, it would be echoed back in the error message, leading to potential information leakage in logs or client responses.
+
+**Learning:**
+The principle from 2026-02-24 applies broadly: never echo raw configuration or environment variable values in error messages, even during validation. It's safer to provide generic validation errors (e.g., "expected positive number" instead of "expected positive number, got 'my-secret-key'").
+
+**Prevention:**
+1.  Avoid string interpolation of raw inputs (`got '${raw}'`) when throwing validation or configuration errors.
+2.  Provide clear, generic error messages that describe the *expected* state without reflecting the *actual* (potentially sensitive) state.
