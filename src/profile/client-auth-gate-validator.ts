@@ -33,9 +33,8 @@ function resolveEnv(
   if (fromEnv) {
     const resolved = process.env[fromEnv];
     if (!resolved) {
-      throw new ClientAuthGateError(`${fieldPath}: env var '${fromEnv}' is not set`, {
+      throw new ClientAuthGateError(`${fieldPath}: required env var is not set`, {
         path: fieldPath,
-        envVar: fromEnv,
       });
     }
     return resolved;
@@ -63,8 +62,8 @@ export function resolveClientAuthGateConfig(config: ClientAuthGateConfig): Clien
     resolveEnv(config.mode, config.mode_from_env, 'client_auth_gate.mode') ?? 'required';
   if (resolvedMode !== 'required' && resolvedMode !== 'optional') {
     throw new ClientAuthGateError(
-      `client_auth_gate.mode must be 'required' or 'optional', got '${resolvedMode}'`,
-      { path: 'client_auth_gate.mode', value: resolvedMode },
+      `client_auth_gate.mode must be 'required' or 'optional'.`,
+      { path: 'client_auth_gate.mode' },
     );
   }
   const mode: 'required' | 'optional' = resolvedMode;
@@ -104,10 +103,9 @@ export function resolveClientAuthGateConfig(config: ClientAuthGateConfig): Clien
       // an actionable error instead of silent all-key rejection at runtime.
       if (!process.env[entry.key_from_env]?.trim()) {
         throw new ClientAuthGateError(
-          `client_auth_gate.api_keys.keys[].key_from_env: env var '${entry.key_from_env}' is not set`,
+          `client_auth_gate.api_keys.keys[].key_from_env: required env var is not set`,
           {
             path: 'client_auth_gate.api_keys.keys[].key_from_env',
-            envVar: entry.key_from_env,
           },
         );
       }
