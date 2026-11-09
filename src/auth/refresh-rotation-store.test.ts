@@ -37,6 +37,27 @@ function expectLease<T>(redemption: RefreshRedemption<T>): { newJti: string; com
 }
 
 describe('RefreshRotationStore', () => {
+  describe('beginRotation', () => {
+    it('amortizes evictExpired via EVICT_INTERVAL', () => {
+      const store = new RefreshRotationStore();
+      const EVICT_INTERVAL = 100;
+
+      // Setup a revoked token that is expired
+      const key = 'test-key';
+      (store as any)['revoked'].set(key, Date.now() - 1000);
+
+      // If we don't trigger eviction, it stays in revoked.
+      // It won't trigger until we hit 100 calls.
+      for (let i = 0; i < EVICT_INTERVAL - 1; i++) {
+        store.beginRotation(`other-key-${i}`, 'jti');
+        expect((store as any)['revoked'].has(key)).toBe(true);
+      }
+
+      // The 100th call triggers eviction
+      store.beginRotation(`other-key-100`, 'jti');
+      expect((store as any)['revoked'].has(key)).toBe(false);
+    });
+  });
   it('leases an unknown family on first use (restart / initial issuance)', () => {
     const store = new RefreshRotationStore();
     const redemption = store.beginRotation('default:fam-1', 'jti-1');
