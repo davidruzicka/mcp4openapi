@@ -126,6 +126,12 @@ const PKCE_CODE_VERIFIER_PATTERN = /^[A-Za-z0-9\-._~]{43,128}$/;
  */
 const CONSUMED_CODE_TOMBSTONE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Upper bound on remembered consumed-code tombstones.
+ * Capacity limit to prevent memory exhaustion DoS.
+ */
+const CONSUMED_CODE_TOMBSTONE_MAX = 10000;
+
 /** Loopback hosts that may use plain http redirect_uris (RFC 8252). */
 const LOOPBACK_REDIRECT_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
@@ -1351,6 +1357,14 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
    * of that code can revoke them (RFC 6749 §4.1.2).
    */
   private recordConsumedCodeTombstone(code: string, tokens: OAuthTokens, clientId: string): void {
+    // Evict oldest if we're at capacity
+    if (this.consumedCodeTombstones.size >= CONSUMED_CODE_TOMBSTONE_MAX) {
+      const oldestKey = this.consumedCodeTombstones.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.consumedCodeTombstones.delete(oldestKey);
+      }
+    }
+
     this.consumedCodeTombstones.set(code, {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
