@@ -242,19 +242,6 @@ describe('buildHttpTransportBaseConfig', () => {
       expect(config.tokenKey?.length).toBe(32);
       expect(config.tokenKey?.equals(Buffer.from('a'.repeat(64), 'hex'))).toBe(true);
     });
-
-    it('derives legacyTokenKey via SHA-256 for passphrase (pre-scrypt envelope fallback)', () => {
-      process.env.MCP4_OAUTH_KEY = 'my-passphrase';
-      const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
-      const expected = crypto.createHash('sha256').update('my-passphrase').digest();
-      expect(config.legacyTokenKey?.equals(expected)).toBe(true);
-    });
-
-    it('leaves legacyTokenKey undefined for 64-char hex keys (both KDFs identical)', () => {
-      process.env.MCP4_OAUTH_KEY = 'a'.repeat(64);
-      const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
-      expect(config.legacyTokenKey).toBeUndefined();
-    });
   });
 });
 

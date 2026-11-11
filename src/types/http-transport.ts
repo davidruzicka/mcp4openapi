@@ -117,12 +117,6 @@ export interface HttpTransportConfig {
    */
   tokenKey?: Buffer;
   /**
-   * Legacy SHA-256-derived key used only as a decrypt fallback for envelopes
-   * issued before the scrypt KDF migration. Undefined for 64-hex keys (both
-   * KDFs derive identically there) and when tokenKey is unset.
-   */
-  legacyTokenKey?: Buffer;
-  /**
    * Absolute path of the durable consent evidence file (`MCP4_CONSENT_EVIDENCE_PATH`).
    * Required for profiles declaring `consent_gate.required`; without it the
    * profile fails to start rather than falling back to volatile storage.
