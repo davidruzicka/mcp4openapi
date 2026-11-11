@@ -43,8 +43,6 @@ export interface RefreshEnvelopeContext {
   consentRequired: boolean;
   /** 32-byte envelope key; undefined in plain-token mode. */
   tokenKey?: Buffer;
-  /** Legacy SHA-256 KDF fallback key for pre-scrypt envelopes. */
-  legacyTokenKey?: Buffer;
   /**
    * Bounded rotation state (OAuth 2.1 §4.3.1). Undefined disables rotation
    * tracking (plain-token mode / tests) - envelopes are still issued, just not
@@ -171,7 +169,6 @@ export function resolveRefreshGrant(
       presentedToken,
       context.tokenKey,
       context.profileId,
-      context.legacyTokenKey,
     );
     if (!payload) {
       throw new AuthenticationError('Refresh token envelope could not be verified');

@@ -38,7 +38,7 @@
  * to extra fields).
  */
 
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { AuthenticationError, ValidationError } from '../core/errors.js';
 import { normalizeIssuer } from './issuer.js';
 
@@ -143,18 +143,15 @@ export function encryptRefreshEnvelope(payload: RefreshEnvelopePayload, key: Buf
 /**
  * Decrypt a `mcp4.r1.` refresh envelope. Returns null on every failure mode,
  * including an `iat` older than REFRESH_IDENTITY_TTL_MS or future-dated beyond
- * IAT_FUTURE_SKEW_MS. Never throws. Retries once with `fallbackKey` for
- * legacy-KDF deployments.
+ * IAT_FUTURE_SKEW_MS. Never throws.
  */
 export function decryptRefreshEnvelope(
   token: string,
   key: Buffer,
   profileId: string,
-  fallbackKey?: Buffer,
 ): RefreshEnvelopePayload | null {
   const primary = attemptRefreshDecrypt(token, key, profileId);
   if (primary !== null) return primary;
-  if (fallbackKey !== undefined) return attemptRefreshDecrypt(token, fallbackKey, profileId);
   return null;
 }
 
@@ -223,14 +220,6 @@ export function deriveTokenKey(raw: string): Buffer {
 }
 
 /**
- * Legacy SHA-256 KDF kept ONLY for decrypting envelopes issued before the
- * scrypt migration. Never use for new keys. Removal tracked in TODO.md.
- */
-export function deriveLegacySha256TokenKey(raw: string): Buffer {
-  return createHash('sha256').update(raw).digest();
-}
-
-/**
  * O(1) format check - returns true only for strings that begin with the
  * `mcp4.v1.` magic prefix. Does NOT attempt decryption.
  */
@@ -280,25 +269,15 @@ export function encryptTokenPayload(payload: TokenEnvelopePayload, key: Buffer):
  *  - missing/wrong-typed required fields (`at`, `pid`)
  *
  * NEVER throws. Safe to call without try/catch.
- *
- * When `fallbackKey` is provided and decryption with `key` fails, decryption is
- * retried once with `fallbackKey` (legacy SHA-256 KDF backward compatibility).
  */
 export function decryptTokenPayload(
   token: string,
   key: Buffer,
   profileId: string,
-  fallbackKey?: Buffer,
 ): TokenEnvelopePayload | null {
   const primary = attemptDecrypt(token, key, profileId);
   if (primary !== null) {
     return primary;
-  }
-  // Backward compatibility: envelopes encrypted with the legacy SHA-256
-  // passphrase KDF still decrypt via fallbackKey. Encryption always uses the
-  // scrypt key, so legacy envelopes age out naturally on token refresh.
-  if (fallbackKey !== undefined) {
-    return attemptDecrypt(token, fallbackKey, profileId);
   }
   return null;
 }
